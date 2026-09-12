@@ -56,7 +56,7 @@ public static class WinsockNative
     public static extern int listen(IntPtr socketHandle, int backlog);
 
     [DllImport("ws2_32.dll", SetLastError = true)]
-    public static extern IntPtr accept(IntPtr socketHandle, IntPtr addr, ref int addrlen);
+    public static extern IntPtr accept(IntPtr socketHandle, IntPtr addr, IntPtr addrlen);
 
     [DllImport("ws2_32.dll", SetLastError = true)]
     public static extern int connect(IntPtr socketHandle, byte[] name, int namelen);

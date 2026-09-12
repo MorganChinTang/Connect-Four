@@ -152,8 +152,7 @@ public class WinsockServer
 
     private void AcceptLoop()
     {
-        var addrLen = 0;
-        var accepted = WinsockNative.accept(_listenSocket, IntPtr.Zero, ref addrLen);
+        var accepted = WinsockNative.accept(_listenSocket, IntPtr.Zero, IntPtr.Zero);
         if (!_running)
         {
             return;

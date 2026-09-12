@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 2465686294943295975}
   - component: {fileID: 2529356049747864467}
   m_Layer: 5
-  m_Name: PlayerOnePiece
+  m_Name: PlayerOnePiecePreview 1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -58,14 +58,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 0.7216981, b: 0.80265874, a: 1}
+  m_Color: {r: 1, g: 0.5801887, b: 0.5801887, a: 0.38431373}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 2452951084712630063, guid: c77c0e8cb50951f4fbb64347b632c147, type: 3}
+  m_Sprite: {fileID: -2413806693520163455, guid: a86470a33a6bf42c4b3595704624658b, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1

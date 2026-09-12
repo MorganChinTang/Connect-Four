@@ -84,6 +84,24 @@ public class ConnectFourState
         return builder.ToString();
     }
 
+    public int GetDropRow(int column)
+    {
+        if (column < 0 || column >= Width)
+        {
+            return -1;
+        }
+
+        for (var row = 0; row < Height; row++)
+        {
+            if (Board[column, row] == 0)
+            {
+                return row;
+            }
+        }
+
+        return -1;
+    }
+
     public bool DecodeAndApply(string payload, int currentTurn, int result)
     {
         if (string.IsNullOrWhiteSpace(payload) || payload.Length != Width * Height)

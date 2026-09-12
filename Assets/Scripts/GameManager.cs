@@ -1,7 +1,10 @@
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.EventSystems;
 
 public class GameManager : MonoBehaviour
 {
@@ -11,6 +14,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject boardCellPrefab;
     [SerializeField] private GameObject playerOnePiecePrefab;
     [SerializeField] private GameObject playerTwoPiecePrefab;
+    [SerializeField] private GameObject playerOnePiecePreviewPrefab;
+    [SerializeField] private GameObject playerTwoPiecePreviewPrefab;
 
     [SerializeField] private Button hostButton;
     [SerializeField] private Button joinButton;
@@ -18,13 +23,16 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Button[] columnButtons;
     [SerializeField] private Button winPlayAgainButton;
     [SerializeField] private Button losePlayAgainButton;
+    [SerializeField] private Button drawPlayAgainButton;
     [SerializeField] private Button winQuitButton;
     [SerializeField] private Button loseQuitButton;
+    [SerializeField] private Button drawQuitButton;
     [SerializeField] private Button quitOnlyQuitButton;
+    [SerializeField] private Button quitAppButton;
+    [SerializeField] private Button SingleplayerButton;
 
-    [SerializeField] private InputField hostIpInput;
-    [SerializeField] private InputField portInput;
-    [SerializeField] private InputField playerNameInput;
+    [SerializeField] private TMP_InputField hostIpInput;
+    [SerializeField] private TMP_InputField portInput;
     [SerializeField] private TextMeshProUGUI connectionStatusText;
     [SerializeField] private TextMeshProUGUI turnStatusText;
 
@@ -35,12 +43,16 @@ public class GameManager : MonoBehaviour
     private WinsockClient _client;
     private bool _isHost;
     private bool _isConnected;
-    private bool _joinModeSelected;
     private bool _localShutdownRequested;
     private bool _hostRematchRequested;
     private bool _clientRematchRequested;
     private bool _localRematchRequested;
+    private bool _singlePlayerDebugSessionActive;
     private int _localPlayerId;
+    private int _hoveredColumn = -1;
+    private GameObject _previewPiece;
+
+    public bool SinglePlayerDebugMode = false;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -59,7 +71,12 @@ public class GameManager : MonoBehaviour
 
         if (hostIpInput != null && string.IsNullOrWhiteSpace(hostIpInput.text))
         {
-            hostIpInput.text = "127.0.0.1";
+            hostIpInput.text = Application.isEditor ? "127.0.0.1" : string.Empty;
+        }
+
+        if (SingleplayerButton != null)
+        {
+            SingleplayerButton.gameObject.SetActive(SinglePlayerDebugMode);
         }
 
         SetStatus("Select Host or Join.");
@@ -103,6 +120,7 @@ public class GameManager : MonoBehaviour
                 if (columnButtons[i] != null)
                 {
                     columnButtons[i].onClick.AddListener(() => OnColumnClicked(columnIndex));
+                    SetupColumnHover(columnButtons[i], columnIndex);
                 }
             }
         }
@@ -117,6 +135,11 @@ public class GameManager : MonoBehaviour
             losePlayAgainButton.onClick.AddListener(OnPlayAgainClicked);
         }
 
+        if (drawPlayAgainButton != null)
+        {
+            drawPlayAgainButton.onClick.AddListener(OnPlayAgainClicked);
+        }
+
         if (winQuitButton != null)
         {
             winQuitButton.onClick.AddListener(OnQuitClicked);
@@ -127,9 +150,24 @@ public class GameManager : MonoBehaviour
             loseQuitButton.onClick.AddListener(OnQuitClicked);
         }
 
+        if (drawQuitButton != null)
+        {
+            drawQuitButton.onClick.AddListener(OnQuitClicked);
+        }
+
         if (quitOnlyQuitButton != null)
         {
             quitOnlyQuitButton.onClick.AddListener(OnQuitClicked);
+        }
+
+        if (quitAppButton != null)
+        {
+            quitAppButton.onClick.AddListener(OnQuitAppClick);
+        }
+
+        if (SingleplayerButton != null)
+        {
+            SingleplayerButton.onClick.AddListener(OnSinglePlayerClicked);
         }
     }
 
@@ -191,18 +229,19 @@ public class GameManager : MonoBehaviour
             }
 
             _server.SendLine(NetMessage.Start(2), out _);
-            _server.SendLine(NetMessage.Hello(GetLocalName()), out _);
+            _server.SendLine(NetMessage.Hello("Player"), out _);
             BroadcastState();
             SetStatus("Client connected. Your turn.");
             UpdateTurnStatus();
             UpdateColumnInteractivity();
+            UpdatePreviewPiece();
             return;
         }
 
         _isConnected = true;
         if (_client != null)
         {
-            _client.SendLine(NetMessage.Hello(GetLocalName()), out _);
+            _client.SendLine(NetMessage.Hello("Player"), out _);
         }
 
         SetStatus("Connected to host. Waiting for game state.");
@@ -260,6 +299,7 @@ public class GameManager : MonoBehaviour
                         ApplyStateMenus();
                         UpdateTurnStatus();
                         UpdateColumnInteractivity();
+                        UpdatePreviewPiece();
                     }
                 }
 
@@ -310,7 +350,6 @@ public class GameManager : MonoBehaviour
     {
         ShutdownNetworking();
         _isHost = true;
-        _joinModeSelected = false;
         _localPlayerId = 1;
         if (!TryGetPort(out var port))
         {
@@ -327,6 +366,12 @@ public class GameManager : MonoBehaviour
         }
 
         SetStatus($"Hosting on port {port}. Waiting for client...");
+        var localIp = GetLocalIpv4Address();
+        if (!string.IsNullOrWhiteSpace(localIp))
+        {
+            SetStatus($"Hosting on port {port}. Share IP: {localIp}");
+        }
+
         if (menuManager != null)
         {
             menuManager.ShowConnectMenu();
@@ -335,19 +380,11 @@ public class GameManager : MonoBehaviour
 
     private void OnJoinModeClicked()
     {
-        _joinModeSelected = true;
-        _isHost = false;
-        SetStatus("Join selected. Enter host IP/port, then click Connect.");
+        OnConnectClicked();
     }
 
     private void OnConnectClicked()
     {
-        if (!_joinModeSelected)
-        {
-            SetStatus("Select Join first.");
-            return;
-        }
-
         ShutdownNetworking();
         _isHost = false;
         _localPlayerId = 0;
@@ -367,7 +404,7 @@ public class GameManager : MonoBehaviour
         _client = new WinsockClient();
         if (!_client.Connect(ip, port, out var error))
         {
-            SetStatus(error);
+            SetStatus(GetConnectionErrorMessage(ip, port, error));
             _client = null;
             return;
         }
@@ -377,6 +414,24 @@ public class GameManager : MonoBehaviour
     {
         if (!_isConnected || _state.Result != ConnectFourResult.Ongoing)
         {
+            return;
+        }
+
+        if (_singlePlayerDebugSessionActive)
+        {
+            if (_state.TryDropToken(column, _state.CurrentTurnPlayer, out _))
+            {
+                RenderBoard();
+                ApplyStateMenus();
+                UpdateTurnStatus();
+                UpdateColumnInteractivity();
+                UpdatePreviewPiece();
+            }
+            else
+            {
+                SetStatus("Invalid move.");
+            }
+
             return;
         }
 
@@ -412,12 +467,29 @@ public class GameManager : MonoBehaviour
 
         SetStatus("Move sent. Waiting for host...");
         UpdateColumnInteractivity();
+        UpdatePreviewPiece();
     }
 
     private void OnPlayAgainClicked()
     {
         if (!_isConnected)
         {
+            return;
+        }
+
+        if (_singlePlayerDebugSessionActive)
+        {
+            _state.Reset();
+            RenderBoard();
+            if (menuManager != null)
+            {
+                menuManager.ShowGameUI();
+            }
+
+            SetStatus("Single-player debug match reset.");
+            UpdateTurnStatus();
+            UpdateColumnInteractivity();
+            UpdatePreviewPiece();
             return;
         }
 
@@ -464,9 +536,42 @@ public class GameManager : MonoBehaviour
         SetStatus("Rematch started.");
     }
 
+    private void OnQuitAppClick()
+    {
+        Application.Quit();
+    }
+
+    private void OnSinglePlayerClicked()
+    {
+        if (!SinglePlayerDebugMode)
+        {
+            return;
+        }
+
+        ShutdownNetworking();
+        _singlePlayerDebugSessionActive = true;
+        _isHost = false;
+        _isConnected = true;
+        _localPlayerId = 1;
+        _state.Reset();
+        EnsureBoardVisuals();
+        RenderBoard();
+        if (menuManager != null)
+        {
+            menuManager.ShowGameUI();
+        }
+
+        SetStatus("Single-player debug mode: play both sides.");
+        UpdateTurnStatus();
+        UpdateColumnInteractivity();
+        UpdatePreviewPiece();
+    }
+
     private void OnQuitClicked()
     {
         _localShutdownRequested = true;
+        var wasDebugSession = _singlePlayerDebugSessionActive;
+        _singlePlayerDebugSessionActive = false;
         if (_isHost)
         {
             if (_server != null)
@@ -485,12 +590,13 @@ public class GameManager : MonoBehaviour
         ShutdownNetworking();
         _state.Reset();
         RenderBoard();
+        HidePreviewPiece();
         if (menuManager != null)
         {
             menuManager.ShowConnectMenu();
         }
 
-        SetStatus("Connection closed.");
+        SetStatus(wasDebugSession ? "Single-player debug mode ended." : "Connection closed.");
         _localShutdownRequested = false;
     }
 
@@ -499,6 +605,7 @@ public class GameManager : MonoBehaviour
         ShutdownNetworking();
         _isConnected = false;
         UpdateColumnInteractivity();
+        HidePreviewPiece();
         if (menuManager != null)
         {
             menuManager.ShowQuitOnlyMenu();
@@ -513,6 +620,7 @@ public class GameManager : MonoBehaviour
         _hostRematchRequested = false;
         _clientRematchRequested = false;
         _localRematchRequested = false;
+        _singlePlayerDebugSessionActive = false;
 
         if (_server != null)
         {
@@ -543,6 +651,7 @@ public class GameManager : MonoBehaviour
         ApplyStateMenus();
         UpdateTurnStatus();
         UpdateColumnInteractivity();
+        UpdatePreviewPiece();
     }
 
     private void ApplyStateMenus()
@@ -560,8 +669,15 @@ public class GameManager : MonoBehaviour
 
         if (_state.Result == ConnectFourResult.Draw)
         {
-            menuManager.ShowWinMenu();
+            menuManager.ShowDrawMenu();
             SetStatus("Draw game. Play again?");
+            return;
+        }
+
+        if (_singlePlayerDebugSessionActive)
+        {
+            menuManager.ShowWinMenu();
+            SetStatus(_state.Result == ConnectFourResult.Player1Win ? "Player 1 wins." : "Player 2 wins.");
             return;
         }
 
@@ -689,7 +805,9 @@ public class GameManager : MonoBehaviour
 
     private void UpdateColumnInteractivity()
     {
-        var allow = _isConnected && _state.Result == ConnectFourResult.Ongoing && _state.CurrentTurnPlayer == _localPlayerId;
+        var allow = _singlePlayerDebugSessionActive
+            ? _isConnected && _state.Result == ConnectFourResult.Ongoing
+            : _isConnected && _state.Result == ConnectFourResult.Ongoing && _state.CurrentTurnPlayer == _localPlayerId;
         if (columnButtons == null)
         {
             return;
@@ -701,6 +819,11 @@ public class GameManager : MonoBehaviour
             {
                 columnButtons[i].interactable = allow;
             }
+        }
+
+        if (!allow)
+        {
+            HidePreviewPiece();
         }
     }
 
@@ -723,7 +846,115 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        if (_singlePlayerDebugSessionActive)
+        {
+            turnStatusText.text = _state.CurrentTurnPlayer == 1 ? "Player 1 turn." : "Player 2 turn.";
+            return;
+        }
+
         turnStatusText.text = _state.CurrentTurnPlayer == _localPlayerId ? "Your turn." : "Opponent turn.";
+    }
+
+    private void SetupColumnHover(Button button, int columnIndex)
+    {
+        var trigger = button.GetComponent<EventTrigger>();
+        if (trigger == null)
+        {
+            trigger = button.gameObject.AddComponent<EventTrigger>();
+        }
+
+        AddEventTrigger(trigger, EventTriggerType.PointerEnter, _ => OnColumnHoverEnter(columnIndex));
+        AddEventTrigger(trigger, EventTriggerType.PointerExit, _ => OnColumnHoverExit(columnIndex));
+    }
+
+    private void AddEventTrigger(EventTrigger trigger, EventTriggerType eventType, UnityEngine.Events.UnityAction<BaseEventData> action)
+    {
+        if (trigger.triggers == null)
+        {
+            trigger.triggers = new List<EventTrigger.Entry>();
+        }
+
+        var entry = new EventTrigger.Entry { eventID = eventType };
+        entry.callback.AddListener(action);
+        trigger.triggers.Add(entry);
+    }
+
+    private void OnColumnHoverEnter(int column)
+    {
+        _hoveredColumn = column;
+        UpdatePreviewPiece();
+    }
+
+    private void OnColumnHoverExit(int column)
+    {
+        if (_hoveredColumn != column)
+        {
+            return;
+        }
+
+        _hoveredColumn = -1;
+        HidePreviewPiece();
+    }
+
+    private void UpdatePreviewPiece()
+    {
+        if (boardRoot == null
+            || _hoveredColumn < 0
+            || _hoveredColumn >= ConnectFourState.Width
+            || !_isConnected
+            || _state.Result != ConnectFourResult.Ongoing)
+        {
+            HidePreviewPiece();
+            return;
+        }
+
+        var allow = _singlePlayerDebugSessionActive || _state.CurrentTurnPlayer == _localPlayerId;
+        if (!allow)
+        {
+            HidePreviewPiece();
+            return;
+        }
+
+        var row = _state.GetDropRow(_hoveredColumn);
+        if (row < 0)
+        {
+            HidePreviewPiece();
+            return;
+        }
+
+        var previewPrefab = GetPreviewPrefabForCurrentTurn();
+        if (previewPrefab == null)
+        {
+            HidePreviewPiece();
+            return;
+        }
+
+        if (_previewPiece == null || _previewPiece.name.Replace("(Clone)", string.Empty).Trim() != previewPrefab.name)
+        {
+            HidePreviewPiece();
+            _previewPiece = Instantiate(previewPrefab, boardRoot);
+        }
+
+        PositionRect(_previewPiece, _hoveredColumn, row);
+    }
+
+    private GameObject GetPreviewPrefabForCurrentTurn()
+    {
+        if (_state.CurrentTurnPlayer == 1)
+        {
+            return playerOnePiecePreviewPrefab != null ? playerOnePiecePreviewPrefab : playerOnePiecePrefab;
+        }
+
+        return playerTwoPiecePreviewPrefab != null ? playerTwoPiecePreviewPrefab : playerTwoPiecePrefab;
+    }
+
+    private void HidePreviewPiece()
+    {
+        if (_previewPiece != null)
+        {
+            Destroy(_previewPiece);
+            _previewPiece = null;
+        }
     }
 
     private void SetStatus(string message)
@@ -745,13 +976,40 @@ public class GameManager : MonoBehaviour
         return int.TryParse(portInput.text, out port) && port is > 0 and < 65536;
     }
 
-    private string GetLocalName()
+    private string GetConnectionErrorMessage(string ip, int port, string rawError)
     {
-        if (playerNameInput == null || string.IsNullOrWhiteSpace(playerNameInput.text))
+        if (!string.IsNullOrWhiteSpace(rawError) && rawError.Contains("10061"))
         {
-            return "Player";
+            if (ip == "127.0.0.1" || ip.Equals("localhost", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return "connect failed: 10061. 127.0.0.1 only works on the same device. Use host LAN/Public IP.";
+            }
+
+            return $"connect failed: 10061. Host not reachable at {ip}:{port}. Verify host is running, firewall allows TCP {port}, and router port-forwarding is set.";
         }
 
-        return playerNameInput.text.Trim();
+        return rawError;
     }
+
+    private string GetLocalIpv4Address()
+    {
+        try
+        {
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            for (var i = 0; i < host.AddressList.Length; i++)
+            {
+                var address = host.AddressList[i];
+                if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
+                {
+                    return address.ToString();
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
+    }
+
 }

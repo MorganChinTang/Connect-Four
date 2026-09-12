@@ -6,6 +6,7 @@ public class MenuManager : MonoBehaviour
     [SerializeField] private GameObject connectMenu;
     [SerializeField] private GameObject winMenu;
     [SerializeField] private GameObject loseMenu;
+    [SerializeField] private GameObject drawMenu;
     [SerializeField] private GameObject quitOnlyMenu;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
@@ -21,30 +22,35 @@ public class MenuManager : MonoBehaviour
 
     public void ShowConnectMenu()
     {
-        SetActivePanels(connect: true, game: false, win: false, lose: false, quitOnly: false);
+        SetActivePanels(connect: true, game: false, win: false, lose: false, draw: false, quitOnly: false);
     }
 
     public void ShowGameUI()
     {
-        SetActivePanels(connect: false, game: true, win: false, lose: false, quitOnly: false);
+        SetActivePanels(connect: false, game: true, win: false, lose: false, draw: false, quitOnly: false);
     }
 
     public void ShowWinMenu()
     {
-        SetActivePanels(connect: false, game: false, win: true, lose: false, quitOnly: false);
+        SetActivePanels(connect: false, game: true, win: true, lose: false, draw: false, quitOnly: false);
     }
 
     public void ShowLoseMenu()
     {
-        SetActivePanels(connect: false, game: false, win: false, lose: true, quitOnly: false);
+        SetActivePanels(connect: false, game: true, win: false, lose: true, draw: false, quitOnly: false);
+    }
+
+    public void ShowDrawMenu()
+    {
+        SetActivePanels(connect: false, game: true, win: false, lose: false, draw: true, quitOnly: false);
     }
 
     public void ShowQuitOnlyMenu()
     {
-        SetActivePanels(connect: false, game: false, win: false, lose: false, quitOnly: true);
+        SetActivePanels(connect: false, game: true, win: false, lose: false, draw: false, quitOnly: true);
     }
 
-    private void SetActivePanels(bool connect, bool game, bool win, bool lose, bool quitOnly)
+    private void SetActivePanels(bool connect, bool game, bool win, bool lose, bool draw, bool quitOnly)
     {
         if (connectMenu != null)
         {
@@ -64,6 +70,11 @@ public class MenuManager : MonoBehaviour
         if (loseMenu != null)
         {
             loseMenu.SetActive(lose);
+        }
+
+        if (drawMenu != null)
+        {
+            drawMenu.SetActive(draw);
         }
 
         if (quitOnlyMenu != null)
