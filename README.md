@@ -15,7 +15,7 @@ Simple 1v1 turn-based Connect Four built in Unity Canvas UI with custom Winsock 
 2. **Join player**
    - Enter host IP (for same machine/local test, use `127.0.0.1`)
    - Enter the same port
-   - Press **Join** (or **Connect**, same behavior)
+   - Press **Join**
 
 ## Suggested Playtest Method (Single Device)
 - Run the game in the **Unity Editor**.
