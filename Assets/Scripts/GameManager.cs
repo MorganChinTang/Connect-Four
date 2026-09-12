@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Sockets;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -71,7 +69,7 @@ public class GameManager : MonoBehaviour
 
         if (hostIpInput != null && string.IsNullOrWhiteSpace(hostIpInput.text))
         {
-            hostIpInput.text = Application.isEditor ? "127.0.0.1" : string.Empty;
+            hostIpInput.text = "127.0.0.1";
         }
 
         if (SingleplayerButton != null)
@@ -366,12 +364,6 @@ public class GameManager : MonoBehaviour
         }
 
         SetStatus($"Hosting on port {port}. Waiting for client...");
-        var localIp = GetLocalIpv4Address();
-        if (!string.IsNullOrWhiteSpace(localIp))
-        {
-            SetStatus($"Hosting on port {port}. Share IP: {localIp}");
-        }
-
         if (menuManager != null)
         {
             menuManager.ShowConnectMenu();
@@ -404,7 +396,7 @@ public class GameManager : MonoBehaviour
         _client = new WinsockClient();
         if (!_client.Connect(ip, port, out var error))
         {
-            SetStatus(GetConnectionErrorMessage(ip, port, error));
+            SetStatus(error);
             _client = null;
             return;
         }
@@ -974,42 +966,6 @@ public class GameManager : MonoBehaviour
         }
 
         return int.TryParse(portInput.text, out port) && port is > 0 and < 65536;
-    }
-
-    private string GetConnectionErrorMessage(string ip, int port, string rawError)
-    {
-        if (!string.IsNullOrWhiteSpace(rawError) && rawError.Contains("10061"))
-        {
-            if (ip == "127.0.0.1" || ip.Equals("localhost", System.StringComparison.OrdinalIgnoreCase))
-            {
-                return "connect failed: 10061. 127.0.0.1 only works on the same device. Use host LAN/Public IP.";
-            }
-
-            return $"connect failed: 10061. Host not reachable at {ip}:{port}. Verify host is running, firewall allows TCP {port}, and router port-forwarding is set.";
-        }
-
-        return rawError;
-    }
-
-    private string GetLocalIpv4Address()
-    {
-        try
-        {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            for (var i = 0; i < host.AddressList.Length; i++)
-            {
-                var address = host.AddressList[i];
-                if (address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address))
-                {
-                    return address.ToString();
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return string.Empty;
     }
 
 }
